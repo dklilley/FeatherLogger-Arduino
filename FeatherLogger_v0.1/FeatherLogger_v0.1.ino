@@ -101,6 +101,10 @@ void error(const __FlashStringHelper* err) {
   while(true); // Catch the program in a loop
 }
 
+// Temporary Test Logger Files
+int sharpPin = A1;
+int logLimitCt = 0;
+File logFile;
 
 void setup() {
   #if USB_DEBUG
@@ -225,6 +229,17 @@ void setup() {
   #endif
   
   Serial.println(F("******************************************************"));
+  // Set up logger variables
+  
+  pinMode(sharpPin, INPUT);
+
+  int status = openLogFile();
+  if(status == 0) error(F("File not opened..."));
+  else if(status == 1) Serial.println("File opened");
+  else if(status == -1) Serial.println("File reopened");
+
+
+  
   Serial.println();
 }
 
@@ -232,11 +247,84 @@ void setup() {
 
 void loop() {
   // Read sensor data and store on SD card
+  logData();
   
   // Check for commands from BLE
   if(ble.isConnected()) { // If an app has connected to the FeatherLogger
     handleBleInput();
   }
+}
+
+/*
+ * Logs data from the connected sensors into a file on the SD card
+ */
+void logData() {
+  // Temporary method body, just hard code everything
+
+  int sharpVal = analogRead(sharpPin);
+
+  logFile.print("Sharp Sensor Value: ");
+  logFile.println(sharpVal);
+  logFile.print("Date: ");
+
+  DateTime now = rtc.now();
+  logFile.print(now.month());
+  logFile.print("/");
+  logFile.print(now.day());
+  logFile.print("/");
+  logFile.print(now.year());
+  logFile.print("  ");
+  logFile.print(now.hour());
+  logFile.print(":");
+  logFile.print(now.minute());
+  logFile.print(":");
+  logFile.println(now.second());
+
+  logFile.flush();
+  
+  logLimitCt++;
+  if(logLimitCt == 10) {
+    logLimitCt = 0;
+    logFile.close();
+    int status = openLogFile();
+    if(status == 0) error(F("File not opened..."));
+    else if(status == 1) Serial.println("File opened");
+    else if(status == -1) Serial.println("File reopened");
+  }
+  
+  delay(2000);
+}
+
+int openLogFile() {
+  String fileName = getLogFileName();
+  int code = 1; // No error, file doesn't exist
+  
+  if(SD.exists(fileName)) code = -1; // No error, file already exists
+
+  logFile = SD.open(fileName, FILE_WRITE);
+
+  if(!logFile) return 0; // File not opened, return error
+
+  return code;
+}
+
+String getLogFileName() {
+  String fileName = "";
+  
+  DateTime now = rtc.now();
+
+  int month = now.month();
+  int day = now.day();
+  int year = now.year();
+
+  if(month < 10) fileName += "0";
+  fileName += month;
+  if(day < 10) fileName += "0";
+  fileName += day;
+  fileName += year;
+  fileName += ".txt";
+
+  return fileName;
 }
 
 /**
@@ -340,7 +428,7 @@ void reqFiles(String data) {
   // TODO: Currently supports just one file at a time
   int delim = data.indexOf('&');
   String file = data.substring(delim+1);
-
+  
   sendFile(file);
 }
 
@@ -508,6 +596,9 @@ uint64_t getMaxStorageBytes() {
  * Sends the contents of the specified file over BLE
  */
 void sendFile(String fileName) {
+  if(logFile) logFile.close();
+
+  
   File file = SD.open(fileName, FILE_READ);
   
   if(file) {
@@ -555,5 +646,7 @@ void sendFile(String fileName) {
     Serial.print("Error opening file: ");
     Serial.println(fileName);
   }
+
+  openLogFile();
 }
 
